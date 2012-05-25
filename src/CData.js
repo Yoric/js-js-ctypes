@@ -47,7 +47,7 @@ CData.prototype = {
  * @param {Number=} value The initial value of this number. 0 if undefined.
  * @constructor
  */
-CData.int8_t = new CType("int8_t", function int8_t(value) {
+CData.int8_t = new CType("int8_t", 1, function int8_t(value) {
   CData.call(this, CData.int8_t);
   let buffer = new ArrayBuffer(1);
   let view = new Int8Array(buffer);
@@ -63,9 +63,11 @@ CData.int8_t = new CType("int8_t", function int8_t(value) {
 });
 
 CData.int8_t.prototype = Object.create(CData.prototype);
-CData.int8_t.prototype.toString = function() {
-  return ""+this.view[0];
-};
+Object.defineProperty(CData.int8_t.prototype, "toString",
+  {value: function toString() {
+     return ""+this.view[0];
+   }
+});
 Object.defineProperty(CData.int8_t.prototype, "value",
   {
     get: function value() {

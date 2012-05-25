@@ -46,7 +46,10 @@ Object.defineProperty(CType.prototype, "ptr", {
   }
 );
 
-function CPointerType(type) {
+////// The type of pointers
+
+
+CType.CPointerType = new CType(function CPointerType(type) {
   CType.call(type.name + "*", POINTER_SIZE_BYTES,
      function make_ptr(address) {
        return new CPointerData(CPointerType, address);
@@ -54,10 +57,11 @@ function CPointerType(type) {
   Object.defineProperty(this, "targetType", {
     value: type
   });
-}
-CPointerType.prototype = Object.create(CType.prototype);
-Object.defineProperty(CPointerType.prototype, "toSource", {
+});
+CType.CPointerType.prototype = Object.create(CType.prototype);
+Object.defineProperty(CType.CPointerType.prototype, "toSource", {
   value: function toSource() {
     return this.targetType.toSource() + ".ptr";
   }
 });
+
