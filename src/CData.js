@@ -39,15 +39,18 @@ CData.prototype = {
  * @type {function} toString
  */
 
+
 /**
- * Implementation of type int8_t.
+ * A value of type int8_t.
  *
  * Internal representation is an ArrayBuffer of 1 byte.
  *
  * @param {Number=} value The initial value of this number. 0 if undefined.
  * @constructor
+ * @extends {CData}
  */
-CData.int8_t = new CType("int8_t", 1, function int8_t(value) {
+CData.int8_t = new CType("int8_t", "ctypes.int8_t",
+  1, function int8_t(value) {
   CData.call(this, CData.int8_t);
   let buffer = new ArrayBuffer(1);
   let view = new Int8Array(buffer);
@@ -79,19 +82,17 @@ Object.defineProperty(CData.int8_t.prototype, "value",
   }
 );
 
-// Class methods/properties
-
-Object.defineProperty(CData.int8_t, "toSource", {
-    value: function toSource() {
-      return "CData.int8_t";
-    }
-});
-
-
-
 //////// Implementing pointers
 
-function CPointerData(targetType, address) {
+/**
+ * A pointer
+ *
+ * @param {CType} targetType The type targeted.
+ * @param {ArrayBuffer=} address Optionally, the address targeted.
+ * @constructor
+ * @extends {CData}
+ */
+CData.CPointerData = function CPointerData(targetType, address) {
   CData.call(targetType.ptr);
   let buffer = new ArrayBuffer(POINTER_SIZE_BYTES);
   let view = new UInt16Array(buffer);
@@ -104,14 +105,15 @@ function CPointerData(targetType, address) {
   if (address) {
     this.value = address;
   }
-}
+};
+CData.CPointerData.prototype = Object.create(CData);
 
 Object.defineProperty(CPointerData.prototype, "value", {
   get: function value() {
-    // ?
+    throw new Error("Cannot convert to primitive value");
   },
   set: function value(address) {
-    // Copy the address to |this.buffer| (created by function |ptr_t|)
+    // FIXME: Copy the address to |this.buffer|
   }
 });
 
@@ -136,6 +138,78 @@ Object.defineProperty(CPointerData.prototype, "contents", {
     } else {
       size = size || this.type.size;
     }
-    return this.type.adopt(JS_GetPointerAsUnmanagedArrayBuffer(this.buffer, size));
+    return this.type.adopt(C_GetPointerAsUnmanagedArrayBuffer(this.buffer, size));
+  }
+});
+
+
+//////// Implementing functions
+
+/**
+ * A function
+ *
+ * @param {CType} returnType The return type of the function.
+ * @param {Array.<CType>} argumentTypes The type of arguments to the function.
+ * @param {ArrayBuffer=} address Optionally, the address of the function.
+ * @constructor
+ * @extends {CData}
+ */
+
+CData.CFunctionData = function CFunctionData(returnType, argumentTypes, address) {
+  CData.call(targetType.ptr);
+  let buffer = new ArrayBuffer(POINTER_SIZE_BYTES);
+  let view = new UInt16Array(buffer);
+  Object.defineProperty(this, "buffer", {
+    value: buffer
+  });
+  Object.defineProperty(this, "view", {
+    value: view
+  });
+  if (address) {
+    this.value = address;
+  }
+  // Make sure that |this| can be used as a function
+  let self = this;
+  return function c_call(/*arguments*/) {
+    return self.code(arguments);
+  };
+};
+CData.CFunctionData.prototype = Object.create(CData);
+Object.defineProperty(CData.CFunctionData.prototype, "code", {
+  /**
+   * Perform the call to C.
+   *
+   * @param {*=} args Arguments to pass to C. If they are not already instances
+   * of CData, they will be converted automatically.
+   * @return {*} The result of the C call. If possible, it is converted to a
+   * natural JS value (number, string, etc.). Otherwise, it is returned as an
+   * instance of |CData|.
+   */
+  value: function code(args) {
+    let kung_fu_death_grip = []; // Stuff that should not be gc-ed
+                               // before the end of the call.
+
+    // 1. Convert arguments
+    if (args.length != argumentTypes.length) {
+        throw new TypeError("Function " + symbol + " expected " +
+            argumentTypes.length + ",  got " + arguments.length );
+    }
+
+    let argv = new ArrayBuffer(POINTER_BYTE_SIZE * numberOfArguments);
+    args.forEach(function(arg, i) {
+      let current_argv = argumentTypes[i].toC(arg);
+      kung_fu_death_grip.push(current_argv);
+      C_GetPointerToData(current_argv, argv, POINTER_BYTE_SIZE * i);
+    });
+
+    // 2. Prepare return buffer
+    let return_buffer = new ArrayBuffer(Number.max(FFI_ARG_BYTES, returnType.size));
+
+    // 3. Place actual call
+    C_PlaceFFICall(/*function pointer*/this.raw, return_buffer, argv);
+
+    // 4. Decode result, release death grip
+    kung_fu_death_grip = null;
+    return returnType.fromC(return_buffer);
   }
 });
